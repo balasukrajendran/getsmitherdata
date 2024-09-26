@@ -1,0 +1,135 @@
+import groovy.util.XmlParser
+import groovy.json.JsonSlurper
+import groovy.json.JsonOutput
+pipeline{
+    agent any
+    environment {
+         JENKINS_ID = credentials('7a4e3a')
+        }
+    stages{        
+        stage("Run Report") {
+            steps{
+                script{
+                    echo "RUNS==${RUNS}"  
+                    int run_count = RUNS.toInteger();
+                    def buildNumber
+                    String buildNumberVal
+                    String final_result = ""
+                //   echo "ID = $JENKINS_ID, user=$JENKINS_ID_USR, pass=$JENKINS_ID_PSW"
+                    String SmithersURL = "https://smithers.corporate.local"
+                    String smitherParams
+                    buildNumber = curlGETRequest("$SmithersURL/job/Application-Deploy/lastBuild/buildNumber" as String)
+                
+                    final_result = "BuildNumber".padRight(11,' ')+ "|" + "   Environment".padRight(40,' ') + "|" + "Package Repo".padRight(15,' ')+ "|" + "      Package".padRight(100,' ')
+                    while (run_count > 0){
+                        buildNumberVal = buildNumber
+                        buildNumberVal = buildNumberVal.padRight(11,' ')
+                        smitherParams = ""
+                        def smitherParamBuildData= curlGETRequest("$SmithersURL/job/Application-Deploy/$buildNumber/parameters" as String)
+                        smitherParams = getSmitherParams(smitherParamBuildData)
+                        
+                        if (final_result == ""){
+                           final_result = buildNumberVal + "|" + smitherParams
+                        }
+                        else{
+                           final_result = final_result + "\n" + buildNumberVal + "|" + smitherParams 
+                        }
+                        run_count = run_count - 1
+                        buildNumber = buildNumber.toInteger() - 1
+                        echo ">>" + buildNumber
+                    } //end while
+                    echo final_result
+                }//script
+            }//steps    
+        } //stage  
+    }//stages    
+} //pipeline
+        
+def String getSmitherParams(String fullString) {
+     int starttag = 0
+     int endtag = 0
+     int fullStringLen = fullString.length()
+     int count = 0
+     String currstr = ""
+     String currstrValues = ""
+     int currstrValuesStart = 0
+     int currstrValuesend = 0
+     String returnStr = ""
+     count = 1
+     String repokey_1 = ""
+     String apps_2 = ""
+     String environments_3 = ""
+     String pkg_repo_4 = ""
+     String pkg_5 = ""
+     String servers_6 = ""
+     int ind1 = 0
+     String list = ""
+     while(fullStringLen > 0){
+      starttag = fullString.indexOf("<input readonly=\"true\" name=\"value\"")
+      endtag = fullString.indexOf(">",starttag)
+        if (starttag >= 0 ) {
+          currstr = fullString.substring(starttag,endtag)
+          //println ("currstr=" + currstr)
+          currstrValuesStart = currstr.indexOf("value=\"")
+          currstrValuesEnd = currstr.indexOf("\"",currstrValuesStart + 7)
+          currstrValues = currstr.substring(currstrValuesStart + 7,currstrValuesEnd)
+          //------------
+          if (currstrValues.trim() == ""){
+             currstrValues = "<blank>"
+          }
+                  
+          switch(count){
+            case 1: //repokey_1
+                  repokey_1 = currstrValues
+                 
+                  break;
+            case 2: //apps_2
+                  apps_2 =  currstrValues
+                  
+                  break;
+            case 3: //environments_3
+                  // environments_3 = currstrValues
+                  currstrValues = currstrValues.trim()
+                  environments_3 = currstrValues.padRight(40,' ')
+                 
+                  break;
+            case 4: //pkg_repo_4
+                  pkg_repo_4 = currstrValues.padRight(15,' ')
+                  break;
+            case 5: //pkg_5
+                    
+                    //find first occurence
+                    ind1 =  currstrValues.indexOf(apps_2) 
+                    currstrValues = currstrValues.substring(ind1 + apps_2.length(),currstrValues.length())
+                    //find second occurence
+                    ind1 =  currstrValues.indexOf(apps_2)  
+                    currstrValues = currstrValues.substring(ind1,currstrValues.length())
+                    pkg_5 = currstrValues.padRight(100,' ')
+                  break;
+            case 6: //servers_6
+                  servers_6 = currstrValues
+                  break;
+              
+          }//end switch
+          
+          //------------
+          fullStringLen = fullString.length()
+          fullString = fullString.substring(endtag + 1,fullStringLen)
+          fullStringLen = fullString.length()
+          count = count + 1   
+        }
+        else{
+          fullStringLen = 0
+        }
+    }//end while
+    list = environments_3 + "|" + pkg_repo_4 +"|"+ pkg_5 +"|"
+    return (list)
+}//end def getSmitherParams    
+
+def curlGETRequest(String url) {
+    String secureAuth = "$JENKINS_ID_USR:$JENKINS_ID_PSW" as String
+    //String secureAuth = "bala.krishnancoil:<sample>" as String
+    sh(script: "curl -s -u $secureAuth --location --request GET '$url' \\\n" +
+            "--header 'Accept: application/json' \\\n" +
+            "--header 'Content-Type: application/json'", returnStdout: true)
+}
